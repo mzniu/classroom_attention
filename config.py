@@ -21,6 +21,7 @@ class BehaviorConfig:
     hand_below_hip_threshold: float = 0.02
     hand_below_hip_penalty: int = 15
     short_head_down_penalty: int = 30
+    hand_raise_enabled: bool = True
 
 
 @dataclass
@@ -110,6 +111,9 @@ def load_config(path: str = "config.yaml") -> Config:
         if "short_head_down" in b:
             sh = b["short_head_down"]
             bh.short_head_down_penalty = sh.get("penalty", bh.short_head_down_penalty)
+        if "hand_raise" in b:
+            hr = b["hand_raise"]
+            bh.hand_raise_enabled = hr.get("enabled", bh.hand_raise_enabled)
 
     if "scoring" in data:
         cfg.attention_threshold = data["scoring"].get("attention_threshold", cfg.attention_threshold)

@@ -236,6 +236,19 @@ def calculate_attention_score(keypoints, bbox_height: float, config: Config,
             score -= bh.hand_below_hip_penalty
             reasons.append("手部异常")
 
+        # Hand raise: wrist above shoulder AND above nose → engagement signal
+        if bh.hand_raise_enabled:
+            left_raised = (left_hand[2] > 0.5 and left_shoulder[2] > 0.5
+                           and nose[2] > 0.5
+                           and left_hand[1] < left_shoulder[1]
+                           and left_hand[1] < nose[1])
+            right_raised = (right_hand[2] > 0.5 and right_shoulder[2] > 0.5
+                            and nose[2] > 0.5
+                            and right_hand[1] < right_shoulder[1]
+                            and right_hand[1] < nose[1])
+            if left_raised or right_raised:
+                reasons.append("举手")
+
     except Exception:
         return max(0, score), reasons
 

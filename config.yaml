@@ -33,6 +33,9 @@ behavior:
   short_head_down:
     penalty: 30           # single-frame head-down penalty
 
+  hand_raise:
+    enabled: true          # detect hand-raising as engagement signal
+
 scoring:
   attention_threshold: 50  # score below this = not-focused
 

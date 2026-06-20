@@ -189,21 +189,6 @@ class ClassroomAttentionMonitor:
                             self.state_tracker, int(track_id), fps,
                             face_crop=student_crop
                         )
-                        # DEBUG: print diagnostic every 15 frames
-                        if frame_idx % 15 == 0:
-                            nose = kpts[0]
-                            lsh = kpts[5]
-                            rsh = kpts[6]
-                            sh_y = (lsh[1] + rsh[1]) / 2
-                            hd = nose[1] - sh_y
-                            th = self.config.behavior.head_down_threshold * bbox_height
-                            print(f"  [F{frame_idx}] nose_vis={nose[2]:.2f} "
-                                  f"sh_vis={lsh[2]:.2f}/{rsh[2]:.2f} "
-                                  f"noseY={nose[1]:.0f} shY={sh_y:.0f} "
-                                  f"head_drop={hd:.1f} thresh={th:.1f} "
-                                  f"score={score} {reasons}", flush=True)
-                    elif frame_idx % 30 == 0:
-                        print(f"  [F{frame_idx}] NO pose landmarks detected!", flush=True)
 
                         is_not_focused = score < self.config.attention_threshold
                         viz_detections.append({

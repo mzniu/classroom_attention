@@ -213,3 +213,73 @@ class TestMediaPipeConversion:
 
         assert score <= 30, f"Expected severe penalty, got {score}"
         assert any("长时间低头" in r for r in reasons)
+
+
+class TestHandRaise:
+    def test_hand_raise_detected_no_penalty(self, config, tracker):
+        """Wrist above shoulder AND above nose = hand raised, no penalty."""
+        kpts = make_keypoints({
+            9: [0.35, 0.10, 0.9],   # left wrist high above head
+        }, scale=100)
+        score, reasons = calculate_attention_score(
+            kpts, 100, config, tracker, 10, 30.0)
+        assert score >= 90, f"Hand raise should NOT penalize, got {score}"
+        assert any("举手" in r for r in reasons), f"Expected 举手 in {reasons}"
+
+    def test_hand_raise_right_hand(self, config, tracker):
+        """Right hand raised should also be detected."""
+        kpts = make_keypoints({
+            10: [0.65, 0.10, 0.9],  # right wrist high above head
+        }, scale=100)
+        _, reasons = calculate_attention_score(
+            kpts, 100, config, tracker, 11, 30.0)
+        assert any("举手" in r for r in reasons), f"Reasons: {reasons}"
+
+    def test_no_hand_raise_when_normal(self, config, tracker):
+        """Normal hand position (wrist below shoulder) should NOT trigger."""
+        kpts = make_keypoints(scale=100)
+        _, reasons = calculate_attention_score(
+            kpts, 100, config, tracker, 12, 30.0)
+        assert not any("举手" in r for r in reasons), f"Unexpected 举手: {reasons}"
+
+    def test_hand_raise_wrist_below_nose_ignored(self, config, tracker):
+        """Wrist above shoulder but below nose = not raised (arm not high enough)."""
+        kpts = make_keypoints({
+            # nose at y=15 (scaled), shoulder at y=35, wrist at y=25
+            9: [0.35, 0.25, 0.9],   # wrist between nose and shoulder
+        }, scale=100)
+        _, reasons = calculate_attention_score(
+            kpts, 100, config, tracker, 13, 30.0)
+        assert not any("举手" in r for r in reasons), \
+            f"Wrist not above nose, should not trigger: {reasons}"
+
+    def test_hand_raise_both_hands(self, config, tracker):
+        """Both hands raised should still only note it once."""
+        kpts = make_keypoints({
+            9: [0.35, 0.10, 0.9],    # left wrist high
+            10: [0.65, 0.10, 0.9],   # right wrist high
+        }, scale=100)
+        _, reasons = calculate_attention_score(
+            kpts, 100, config, tracker, 14, 30.0)
+        assert any("举手" in r for r in reasons), f"Reasons: {reasons}"
+
+    def test_hand_raise_low_confidence_ignored(self, config, tracker):
+        """Low-confidence wrist should NOT trigger hand raise."""
+        kpts = make_keypoints({
+            9: [0.35, 0.10, 0.4],   # low confidence
+        }, scale=100)
+        _, reasons = calculate_attention_score(
+            kpts, 100, config, tracker, 15, 30.0)
+        assert not any("举手" in r for r in reasons), \
+            f"Low conf should not trigger: {reasons}"
+
+    def test_hand_raise_disabled(self, config, tracker):
+        """When hand_raise_enabled=False, no detection."""
+        config.behavior.hand_raise_enabled = False
+        kpts = make_keypoints({
+            9: [0.35, 0.10, 0.9],   # wrist high
+        }, scale=100)
+        _, reasons = calculate_attention_score(
+            kpts, 100, config, tracker, 16, 30.0)
+        assert not any("举手" in r for r in reasons), \
+            f"Disabled but still detected: {reasons}"
