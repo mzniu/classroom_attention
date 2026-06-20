@@ -154,9 +154,10 @@ class TestMediaPipeConversion:
 
         kpts = mediapipe_landmarks_to_coco_keypoints(landmarks)
         assert kpts.shape == (17, 3)
-        assert kpts[0][0] == 0.5 and kpts[0][1] == 0.15
-        assert kpts[5][0] == 0.35   # left shoulder
-        assert kpts[6][0] == 0.65   # right shoulder
+        assert float(kpts[0][0]) == pytest.approx(0.5)
+        assert float(kpts[0][1]) == pytest.approx(0.15)
+        assert float(kpts[5][0]) == pytest.approx(0.35)
+        assert float(kpts[6][0]) == pytest.approx(0.65)
 
     def test_mediapipe_to_coco_none_returns_zeros(self):
         """None input should return zero-filled array."""
