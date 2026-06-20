@@ -132,3 +132,73 @@ class TestAttentionScoring:
             kpts, 100, config, tracker, 9, 30.0)
         assert score == 0
         assert reasons == []
+
+
+class TestMediaPipeConversion:
+    def test_mediapipe_to_coco_conversion(self):
+        """MediaPipe landmarks should convert to COCO keypoint format."""
+        from behavior import mediapipe_landmarks_to_coco_keypoints
+
+        class MockLandmark:
+            def __init__(self, x, y, visibility):
+                self.x = x
+                self.y = y
+                self.visibility = visibility
+
+        landmarks = [MockLandmark(0, 0, 0)] * 33
+        landmarks[0] = MockLandmark(0.5, 0.15, 0.9)    # nose
+        landmarks[2] = MockLandmark(0.47, 0.12, 0.9)   # left eye
+        landmarks[5] = MockLandmark(0.53, 0.12, 0.9)   # right eye
+        landmarks[11] = MockLandmark(0.35, 0.35, 0.9)  # left shoulder
+        landmarks[12] = MockLandmark(0.65, 0.35, 0.9)  # right shoulder
+
+        kpts = mediapipe_landmarks_to_coco_keypoints(landmarks)
+        assert kpts.shape == (17, 3)
+        assert kpts[0][0] == 0.5 and kpts[0][1] == 0.15
+        assert kpts[5][0] == 0.35   # left shoulder
+        assert kpts[6][0] == 0.65   # right shoulder
+
+    def test_mediapipe_to_coco_none_returns_zeros(self):
+        """None input should return zero-filled array."""
+        from behavior import mediapipe_landmarks_to_coco_keypoints
+        kpts = mediapipe_landmarks_to_coco_keypoints(None)
+        assert kpts.shape == (17, 3)
+        assert np.all(kpts == 0)
+
+    def test_v1_long_term_head_down(self):
+        """v1 with StudentStateTracker should detect long-term head down
+        using MediaPipe landmarks converted to COCO keypoints."""
+        from behavior import (
+            mediapipe_landmarks_to_coco_keypoints,
+            StudentStateTracker,
+            calculate_attention_score,
+        )
+        from config import Config
+
+        class MockLandmark:
+            def __init__(self, x, y, visibility):
+                self.x = x
+                self.y = y
+                self.visibility = visibility
+
+        landmarks = [MockLandmark(0, 0, 0)] * 33
+        landmarks[0] = MockLandmark(0.5, 0.50, 0.9)   # nose low
+        landmarks[2] = MockLandmark(0.47, 0.47, 0.9)
+        landmarks[5] = MockLandmark(0.53, 0.47, 0.9)
+        landmarks[11] = MockLandmark(0.35, 0.35, 0.9)  # shoulder
+        landmarks[12] = MockLandmark(0.65, 0.35, 0.9)
+        landmarks[15] = MockLandmark(0.25, 0.55, 0.9)  # wrist
+        landmarks[16] = MockLandmark(0.75, 0.55, 0.9)
+        landmarks[23] = MockLandmark(0.35, 0.65, 0.9)  # hip
+        landmarks[24] = MockLandmark(0.65, 0.65, 0.9)
+
+        config = Config()
+        tracker = StudentStateTracker()
+
+        kpts = mediapipe_landmarks_to_coco_keypoints(landmarks)
+        for _ in range(100):
+            score, reasons = calculate_attention_score(
+                kpts, 100, config, tracker, 1, 30.0)
+
+        assert score <= 30, f"Expected severe penalty, got {score}"
+        assert any("长时间低头" in r for r in reasons)

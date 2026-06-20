@@ -7,6 +7,40 @@ from collections import defaultdict, deque
 import numpy as np
 from config import Config
 
+# MediaPipe Pose (33 landmarks) → COCO (17 keypoints) index mapping.
+# Source: MediaPipe Pose landmark model card.
+_MP_TO_COCO = {
+    0: 0,    # NOSE
+    1: 2,    # LEFT_EYE
+    2: 5,    # RIGHT_EYE
+    5: 11,   # LEFT_SHOULDER
+    6: 12,   # RIGHT_SHOULDER
+    9: 15,   # LEFT_WRIST
+    10: 16,  # RIGHT_WRIST
+    13: 23,  # LEFT_HIP
+    14: 24,  # RIGHT_HIP
+}
+
+
+def mediapipe_landmarks_to_coco_keypoints(landmarks) -> "np.ndarray":
+    """Convert MediaPipe Pose landmarks to COCO 17-keypoint format.
+
+    Args:
+        landmarks: List of 33 MediaPipe Pose landmarks (each with x, y, visibility),
+                   or None.
+
+    Returns:
+        (17, 3) numpy array [x, y, confidence], zero-filled where no mapping exists.
+    """
+    kpts = np.zeros((17, 3), dtype=np.float32)
+    if landmarks is None:
+        return kpts
+
+    for coco_idx, mp_idx in _MP_TO_COCO.items():
+        lm = landmarks[mp_idx]
+        kpts[coco_idx] = [lm.x, lm.y, lm.visibility]
+    return kpts
+
 
 class StudentStateTracker:
     """Tracks per-student behavioral state across frames."""
