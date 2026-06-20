@@ -18,7 +18,7 @@ import logging
 from config import Config, load_config
 from reporter import generate_report, print_report
 from visualizer import draw_annotations
-from utils import suppress_warnings, create_video_capture
+from utils import suppress_warnings, create_video_capture, create_camera_capture
 from behavior import (
     StudentStateTracker, calculate_attention_score,
     mediapipe_landmarks_to_coco_keypoints
@@ -80,9 +80,10 @@ class ResourceManager:
 class ClassroomAttentionMonitor:
     """v1 classroom attention monitor (YOLO + DeepSORT + MediaPipe)."""
 
-    def __init__(self, video_path, config=None):
-        self.video_path = video_path
+    def __init__(self, video_path=None, config=None):
+        self.video_path = video_path  # None for camera mode
         self.config = config if config is not None else Config()
+        self.is_camera = self.config.camera_id is not None
         self.attention_records = []
         try:
             self.eye_detector = EyeDetector()
@@ -101,14 +102,23 @@ class ClassroomAttentionMonitor:
         print("步骤1: 初始化模型资源...")
         yolo = ResourceManager.create_yolo(self.config)
         tracker = ResourceManager.create_tracker(self.config)
-        cap, fps, total_frames, width, height = create_video_capture(self.video_path)
+
+        if self.is_camera:
+            cap, fps, width, height = create_camera_capture(self.config.camera_id)
+            total_frames = float('inf')
+        else:
+            cap, fps, total_frames, width, height = create_video_capture(
+                self.video_path)
 
         if None in [yolo, tracker, cap]:
             print("\n✗ 关键资源初始化失败，程序退出")
             return None, None
 
         print("\n步骤2: 开始视频处理...")
-        print("提示: 按 Ctrl+C 可安全中断\n")
+        if self.is_camera:
+            print("提示: 按 ESC 键退出\n")
+        else:
+            print("提示: 按 Ctrl+C 可安全中断\n")
 
         video_writer = None
         if self.config.save_video:
@@ -194,7 +204,16 @@ class ClassroomAttentionMonitor:
                 if video_writer:
                     video_writer.write(frame)
 
-                if frame_idx % 100 == 0:
+                if self.is_camera:
+                    cv2.imshow('Classroom Attention (ESC to exit)', frame)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == 27:
+                        print("\n\n用户按 ESC 退出...")
+                        break
+                    cv2.setWindowTitle(
+                        'Classroom Attention (ESC to exit)',
+                        f'Classroom Attention - Frame {frame_idx}')
+                elif frame_idx % 100 == 0:
                     print(f"  已处理 {frame_idx}/{total_frames} 帧...", end='\r')
 
                 frame_idx += 1
@@ -213,6 +232,8 @@ class ClassroomAttentionMonitor:
                 cap.release()
             if video_writer:
                 video_writer.release()
+            if self.is_camera:
+                cv2.destroyAllWindows()
             if self.eye_detector is not None:
                 self.eye_detector.close()
             print("✓ 资源已释放\n")

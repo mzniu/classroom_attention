@@ -60,6 +60,29 @@ def create_video_capture(path: str) -> tuple:
     return cap, fps, total_frames, width, height
 
 
+def create_camera_capture(device_id: int = 0) -> tuple:
+    """Open camera device. Returns (VideoCapture, fps, width, height)."""
+    cap = cv2.VideoCapture(device_id)
+    if not cap.isOpened():
+        # Windows: try DirectShow backend
+        cap = cv2.VideoCapture(device_id, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        raise ValueError(f"Cannot open camera device: {device_id}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps is None or fps == 0:
+        fps = 30.0
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    if width == 0 or height == 0:
+        cap.release()
+        raise ValueError(f"Invalid camera resolution: {width}x{height}")
+
+    print(f"✓ 摄像头已连接: {width}x{height} @ {fps:.0f}fps")
+    return cap, fps, width, height
+
+
 def create_video_writer(path: str, fps: float, width: int, height: int) -> cv2.VideoWriter:
     """Create video writer for annotated output."""
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')

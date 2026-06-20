@@ -17,15 +17,16 @@ from behavior import StudentStateTracker, calculate_attention_score
 from reporter import generate_report, print_report
 from visualizer import draw_annotations
 from utils import (suppress_warnings, detect_device, create_video_capture,
-                   create_video_writer, print_gpu_info)
+                   create_camera_capture, create_video_writer, print_gpu_info)
 
 suppress_warnings()
 
 
 class ClassroomMonitor:
-    def __init__(self, video_path, config=None):
-        self.video_path = video_path
+    def __init__(self, video_path=None, config=None):
+        self.video_path = video_path  # None for camera mode
         self.config = config if config is not None else Config()
+        self.is_camera = self.config.camera_id is not None
         self.attention_records = []
         self.state_tracker = StudentStateTracker()
 
@@ -50,14 +51,21 @@ class ClassroomMonitor:
             yolo.to("cuda")
         print("✓ 模型加载成功\n")
 
-        print("步骤2: 加载视频文件...")
-        cap, fps, total_frames, width, height = create_video_capture(self.video_path)
+        if self.is_camera:
+            print("步骤2: 连接摄像头...")
+            cap, fps, width, height = create_camera_capture(self.config.camera_id)
+            total_frames = float('inf')
+            print("✓ 摄像头连接成功\n")
+        else:
+            print("步骤2: 加载视频文件...")
+            cap, fps, total_frames, width, height = create_video_capture(self.video_path)
 
         if max_frames > 0:
             total_frames = min(total_frames, max_frames)
-            print(f"✓ 视频: {total_frames}帧(测试模式), {fps:.2f}fps, {width}x{height}\n")
-        else:
-            print(f"✓ 视频: {total_frames}帧, {fps:.2f}fps, {width}x{height}\n")
+
+        print(f"✓ {'摄像头' if self.is_camera else '视频'}: "
+              f"{'实时' if self.is_camera else f'{total_frames}帧'}, "
+              f"{fps:.2f}fps, {width}x{height}\n")
 
         video_writer = None
         if self.config.save_video:
@@ -66,7 +74,11 @@ class ClassroomMonitor:
             print(f"✓ 视频输出: {os.path.abspath(self.config.video_path)}\n")
 
         print("步骤3: 开始GPU加速检测...")
-        print("行为: 低头(短暂/长期) | 闭眼 | 发呆 | 侧身 | 手部异常\n")
+        print("行为: 低头(短暂/长期) | 闭眼 | 发呆 | 侧身 | 手部异常")
+        if self.is_camera:
+            print("提示: 按 ESC 键退出\n")
+        else:
+            print()
 
         frame_idx = 0
         processed_count = 0
@@ -133,17 +145,25 @@ class ClassroomMonitor:
                                 })
 
                     draw_annotations(orig_frame, detections, self.config.show_labels)
-
+                    display_frame = orig_frame
                     if video_writer:
                         video_writer.write(orig_frame)
                 else:
+                    display_frame = frame
                     if video_writer:
                         video_writer.write(frame)
 
-                if processed_count % 50 == 0:
+                if self.is_camera:
+                    cv2.imshow('Classroom Attention (ESC to exit)', display_frame)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == 27:
+                        print("\n\n用户按 ESC 退出...")
+                        break
+                elif processed_count % 50 == 0:
                     progress = (frame_idx / total_frames) * 100
                     detected_people = len(results[0].boxes) if results[0].boxes else 0
-                    not_focus_count = sum(1 for r in self.attention_records if r['frame'] == frame_idx)
+                    not_focus_count = sum(1 for r in self.attention_records
+                                          if r['frame'] == frame_idx)
                     print(f"  --> 进度: {progress:.1f}% [{frame_idx}/{total_frames}] | "
                           f"检测到: {detected_people}人 | 不专注: {not_focus_count}人")
 
@@ -164,6 +184,8 @@ class ClassroomMonitor:
                 if video_writer:
                     video_writer.release()
                     print(f"\n✓ 标注视频已保存: {os.path.abspath(self.config.video_path)}")
+                if self.is_camera:
+                    cv2.destroyAllWindows()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             except Exception as e:

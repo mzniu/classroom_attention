@@ -55,6 +55,9 @@ class Config:
     save_csv: bool = True
     csv_path: str = "attention_report.csv"
 
+    # Camera
+    camera_id: int = None  # None = video file, int = camera device ID
+
     # Performance
     skip_frames: int = 2
 
