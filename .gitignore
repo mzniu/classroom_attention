@@ -1,0 +1,23 @@
+# niuclaude-memory
+MEMORY.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Model files (downloaded automatically by ultralytics)
+*.pt
+
+# Output files
+*.csv
+*.mp4
+output_annotated*.mp4
+
+# IDE
+.vscode/
+.idea/
+
+# Virtual env
+venv/
+.venv/
