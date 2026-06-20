@@ -102,7 +102,7 @@ class ClassroomMonitor:
                     conf=self.config.confidence_threshold,
                     persist=True,
                     tracker="bytetrack.yaml",
-                    device=0,
+                    device=self.config.device,
                     verbose=False
                 )
 
