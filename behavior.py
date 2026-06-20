@@ -45,15 +45,17 @@ def mediapipe_landmarks_to_coco_keypoints(landmarks) -> "np.ndarray":
 class StudentStateTracker:
     """Tracks per-student behavioral state across frames."""
 
-    def __init__(self):
+    def __init__(self, eye_detector=None):
         self.head_position = defaultdict(lambda: deque(maxlen=30))
         self.eye_openness = defaultdict(lambda: deque(maxlen=30))
         self.gaze_position = defaultdict(lambda: deque(maxlen=30))
         self.head_down_timer = defaultdict(float)
         self.eye_closed_timer = defaultdict(float)
         self.stillness_timer = defaultdict(float)
+        self.eye_detector = eye_detector
 
-    def update(self, student_id: int, keypoints, fps: float) -> float:
+    def update(self, student_id: int, keypoints, fps: float,
+               face_crop=None) -> float:
         """Update student state from keypoints. Returns current time in seconds."""
         current_time = len(self.head_position[student_id]) / fps
         if keypoints is not None and len(keypoints) > 0:
@@ -62,13 +64,24 @@ class StudentStateTracker:
             right_eye = keypoints[2]
             if nose[2] > 0.5:
                 self.head_position[student_id].append(nose[:2])
-            ear = self._calculate_ear(left_eye, right_eye)
+            ear = self._get_ear(left_eye, right_eye, face_crop)
             self.eye_openness[student_id].append(ear)
             if left_eye[2] > 0.5 and right_eye[2] > 0.5:
                 gaze_x = (left_eye[0] + right_eye[0]) / 2
                 gaze_y = (left_eye[1] + right_eye[1]) / 2
                 self.gaze_position[student_id].append((gaze_x, gaze_y))
         return current_time
+
+    def _get_ear(self, left_eye, right_eye, face_crop=None) -> float:
+        """Get EAR using Face Mesh when available, else confidence proxy."""
+        if self.eye_detector is not None and face_crop is not None:
+            try:
+                ear = self.eye_detector.get_ear(face_crop)
+                if ear is not None:
+                    return ear
+            except Exception:
+                pass
+        return self._calculate_ear(left_eye, right_eye)
 
     @staticmethod
     def _calculate_ear(left_eye, right_eye) -> float:
@@ -141,7 +154,8 @@ class StudentStateTracker:
 
 def calculate_attention_score(keypoints, bbox_height: float, config: Config,
                                state_tracker: StudentStateTracker,
-                               student_id: int, fps: float) -> tuple:
+                               student_id: int, fps: float,
+                               face_crop=None) -> tuple:
     """Calculate attention score from keypoints.
 
     Args:
@@ -151,6 +165,7 @@ def calculate_attention_score(keypoints, bbox_height: float, config: Config,
         state_tracker: StudentStateTracker instance
         student_id: tracked student ID
         fps: video frames per second
+        face_crop: optional BGR face image crop for real EAR calculation
 
     Returns:
         (score, reasons) where score is 0-100 and reasons is list of strings
@@ -163,7 +178,7 @@ def calculate_attention_score(keypoints, bbox_height: float, config: Config,
     bh = config.behavior
 
     try:
-        state_tracker.update(student_id, keypoints, fps)
+        state_tracker.update(student_id, keypoints, fps, face_crop)
         long_term_behaviors = state_tracker.check_long_term_behaviors(
             student_id, keypoints, fps, config)
 

@@ -23,6 +23,7 @@ from behavior import (
     StudentStateTracker, calculate_attention_score,
     mediapipe_landmarks_to_coco_keypoints
 )
+from eye_detector import EyeDetector
 
 # v1-specific: suppress stderr for MediaPipe on Windows
 os.environ['MEDIAPIPE_DISABLE_GPU'] = '1'
@@ -83,7 +84,14 @@ class ClassroomAttentionMonitor:
         self.video_path = video_path
         self.config = config if config is not None else Config()
         self.attention_records = []
-        self.state_tracker = StudentStateTracker()
+        try:
+            self.eye_detector = EyeDetector()
+            print("✓ MediaPipe Face Mesh 初始化成功 (真实闭眼检测)")
+        except Exception as e:
+            self.eye_detector = None
+            print(f"⚠ Face Mesh 不可用，使用置信度代理: {e}")
+        self.state_tracker = StudentStateTracker(
+            eye_detector=self.eye_detector)
 
     def process(self, output_path="output_annotated.mp4"):
         print("\n" + "=" * 60)
@@ -157,7 +165,8 @@ class ClassroomAttentionMonitor:
                             bbox_height = y2 - y1
                             score, reasons = calculate_attention_score(
                                 kpts, bbox_height, self.config,
-                                self.state_tracker, int(track_id), fps
+                                self.state_tracker, int(track_id), fps,
+                                face_crop=student_crop
                             )
 
                             is_not_focused = score < self.config.attention_threshold
@@ -204,6 +213,8 @@ class ClassroomAttentionMonitor:
                 cap.release()
             if video_writer:
                 video_writer.release()
+            if self.eye_detector is not None:
+                self.eye_detector.close()
             print("✓ 资源已释放\n")
 
         return self.generate_report()
