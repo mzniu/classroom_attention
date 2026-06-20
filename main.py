@@ -91,10 +91,6 @@ def main():
         from ca import ClassroomAttentionMonitor
         monitor = ClassroomAttentionMonitor(input_path, config)
         df, summary = monitor.process()
-
-        # v1 needs stderr restored for print_report
-        import sys as _sys
-        _sys.stderr = _sys.__stderr__
         monitor.print_report(summary)
 
     if df is not None:

@@ -25,12 +25,11 @@ from behavior import (
 )
 from eye_detector import EyeDetector
 
-# v1-specific: suppress stderr for MediaPipe on Windows
+# v1-specific: suppress MediaPipe/TF warnings on Windows
 os.environ['MEDIAPIPE_DISABLE_GPU'] = '1'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 warnings.filterwarnings('ignore')
 logging.getLogger().setLevel(logging.ERROR)
-sys.stderr = open(os.devnull, 'w')
 mp_pose = mp.solutions.pose
 
 
@@ -98,6 +97,10 @@ class ClassroomAttentionMonitor:
         print("\n" + "=" * 60)
         print("课堂专注度检测系统启动".center(60))
         print("=" * 60 + "\n")
+
+        # Suppress MediaPipe stderr noise during processing
+        _stderr = sys.stderr
+        sys.stderr = open(os.devnull, 'w')
 
         print("步骤1: 初始化模型资源...")
         yolo = ResourceManager.create_yolo(self.config)
@@ -227,6 +230,7 @@ class ClassroomAttentionMonitor:
             traceback.print_exc()
 
         finally:
+            sys.stderr = _stderr
             print("\n步骤3: 释放资源...")
             if 'cap' in locals():
                 cap.release()
@@ -248,8 +252,6 @@ class ClassroomAttentionMonitor:
 
 
 def main():
-    sys.stderr = sys.__stderr__
-
     parser = argparse.ArgumentParser(
         description='课堂专注度检测系统 v1 (CPU/MediaPipe)'
     )
@@ -291,7 +293,6 @@ def main():
         print("=" * 60 + "\n")
 
     except Exception as e:
-        sys.stderr = sys.__stderr__
         print(f"\n程序出错: {e}")
         sys.exit(1)
 
