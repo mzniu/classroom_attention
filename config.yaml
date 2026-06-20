@@ -1,0 +1,56 @@
+# Classroom Attention Detection - Configuration
+# All tunable thresholds for different classroom scenarios
+
+model:
+  pose_model: "yolov8m-pose.pt"    # v2 GPU backend
+  yolo_model: "yolo11m.pt"         # v1 CPU/MediaPipe backend
+  device: 0                         # 0 = GPU, "cpu" for CPU-only
+
+behavior:
+  head_down:
+    threshold: 0.03       # nose below shoulder-center (normalized)
+    duration_sec: 3.0     # seconds before "long-term" classification
+    penalty: 80           # points deducted for long-term head-down
+
+  eye_closed:
+    ear_threshold: 0.18   # eye aspect ratio proxy
+    duration_sec: 2.0
+    penalty: 70
+
+  stillness:
+    movement_px: 5.0      # max head movement pixels (in normalized space)
+    duration_sec: 4.0
+    penalty: 50
+
+  shoulder_tilt:
+    angle_threshold: 25   # degrees
+    penalty: 20
+
+  hand_below_hip:
+    threshold: 0.02       # normalized
+    penalty: 15
+
+  short_head_down:
+    penalty: 30           # single-frame head-down penalty
+
+scoring:
+  attention_threshold: 50  # score below this = not-focused
+
+tracking:
+  max_age: 30
+  n_init: 3
+  max_iou_distance: 0.7
+
+detection:
+  confidence_threshold: 0.5
+  person_class_id: 0
+
+output:
+  save_video: true
+  video_path: "output_annotated.mp4"
+  show_labels: true
+  save_csv: true
+  csv_path: "attention_report.csv"
+
+performance:
+  skip_frames: 2          # process every (N+1)th frame
