@@ -19,6 +19,10 @@ from config import Config, load_config
 from reporter import generate_report, print_report
 from visualizer import draw_annotations
 from utils import suppress_warnings, create_video_capture
+from behavior import (
+    StudentStateTracker, calculate_attention_score,
+    mediapipe_landmarks_to_coco_keypoints
+)
 
 # v1-specific: suppress stderr for MediaPipe on Windows
 os.environ['MEDIAPIPE_DISABLE_GPU'] = '1'
@@ -72,57 +76,6 @@ class ResourceManager:
             return None
 
 
-def calculate_attention_score(landmarks, config):
-    """Calculate attention score from MediaPipe landmarks."""
-    if not landmarks:
-        return 0
-
-    score = 100
-    try:
-        nose = landmarks[mp_pose.PoseLandmark.NOSE]
-        left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER]
-        right_shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER]
-        left_hand = landmarks[mp_pose.PoseLandmark.LEFT_WRIST]
-        right_hand = landmarks[mp_pose.PoseLandmark.RIGHT_WRIST]
-        left_hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP]
-        right_hip = landmarks[mp_pose.PoseLandmark.RIGHT_HIP]
-        bh = config.behavior
-
-        # Head down
-        if (nose.visibility > 0.5 and left_shoulder.visibility > 0.5
-                and right_shoulder.visibility > 0.5):
-            shoulder_center_y = (left_shoulder.y + right_shoulder.y) / 2
-            if nose.y - shoulder_center_y > bh.head_down_threshold:
-                score -= 60
-
-        # Shoulder tilt
-        if left_shoulder.visibility > 0.5 and right_shoulder.visibility > 0.5:
-            shoulder_vector = np.array([
-                right_shoulder.x - left_shoulder.x,
-                right_shoulder.y - left_shoulder.y
-            ])
-            angle = np.degrees(np.arctan2(abs(shoulder_vector[1]),
-                                           abs(shoulder_vector[0])))
-            if angle > bh.shoulder_tilt_threshold:
-                score -= 30
-
-        # Hand below hip
-        hand_below_hip = False
-        if (left_hand.visibility > 0.5 and left_hip.visibility > 0.5
-                and left_hand.y > left_hip.y + bh.hand_below_hip_threshold):
-            hand_below_hip = True
-        if (right_hand.visibility > 0.5 and right_hip.visibility > 0.5
-                and right_hand.y > right_hip.y + bh.hand_below_hip_threshold):
-            hand_below_hip = True
-        if hand_below_hip:
-            score -= 20
-
-    except Exception:
-        return max(0, score)
-
-    return max(0, min(100, score))
-
-
 class ClassroomAttentionMonitor:
     """v1 classroom attention monitor (YOLO + DeepSORT + MediaPipe)."""
 
@@ -130,6 +83,7 @@ class ClassroomAttentionMonitor:
         self.video_path = video_path
         self.config = config if config is not None else Config()
         self.attention_records = []
+        self.state_tracker = StudentStateTracker()
 
     def process(self, output_path="output_annotated.mp4"):
         print("\n" + "=" * 60)
@@ -199,14 +153,19 @@ class ClassroomAttentionMonitor:
 
                         if pose_results and pose_results.pose_landmarks:
                             landmarks = pose_results.pose_landmarks.landmark
-                            score = calculate_attention_score(landmarks, self.config)
+                            kpts = mediapipe_landmarks_to_coco_keypoints(landmarks)
+                            bbox_height = y2 - y1
+                            score, reasons = calculate_attention_score(
+                                kpts, bbox_height, self.config,
+                                self.state_tracker, int(track_id), fps
+                            )
 
                             is_not_focused = score < self.config.attention_threshold
                             viz_detections.append({
                                 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
                                 'track_id': track_id,
                                 'score': score,
-                                'reasons': [],
+                                'reasons': reasons,
                                 'is_focused': not is_not_focused,
                             })
 
@@ -217,7 +176,7 @@ class ClassroomAttentionMonitor:
                                     'time_str': str(timedelta(seconds=int(frame_idx / fps))),
                                     'frame': frame_idx,
                                     'score': score,
-                                    'reason': '',
+                                    'reason': ';'.join(reasons),
                                     'bbox': (x1, y1, x2, y2)
                                 })
 
