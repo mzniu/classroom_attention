@@ -30,7 +30,6 @@ os.environ['MEDIAPIPE_DISABLE_GPU'] = '1'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 warnings.filterwarnings('ignore')
 logging.getLogger().setLevel(logging.ERROR)
-mp_pose = mp.solutions.pose
 
 
 class ResourceManager:
@@ -61,18 +60,26 @@ class ResourceManager:
             return None
 
     @staticmethod
-    def create_pose_estimator(config):
+    def create_pose_landmarker(config):
+        """Create MediaPipe PoseLandmarker (tasks API, mediapipe>=0.10)."""
         try:
-            estimator = mp_pose.Pose(
-                static_image_mode=True,
-                model_complexity=0,
-                min_detection_confidence=config.min_detection_confidence,
-                min_tracking_confidence=config.min_tracking_confidence
+            from mediapipe.tasks.python import vision
+            from mediapipe.tasks.python.core import base_options as base
+
+            options = vision.PoseLandmarkerOptions(
+                base_options=base.BaseOptions(
+                    model_asset_path='pose_landmarker_lite.task'),
+                running_mode=vision.RunningMode.IMAGE,
+                num_poses=1,
+                min_pose_detection_confidence=config.min_detection_confidence,
+                min_pose_presence_confidence=config.min_detection_confidence,
+                min_tracking_confidence=config.min_tracking_confidence,
             )
-            print("✓ MediaPipe姿态估计器初始化成功")
-            return estimator
+            landmarker = vision.PoseLandmarker.create_from_options(options)
+            print("✓ MediaPipe PoseLandmarker 初始化成功")
+            return landmarker
         except Exception as e:
-            print(f"✗ MediaPipe初始化失败: {e}")
+            print(f"✗ MediaPipe PoseLandmarker 初始化失败: {e}")
             return None
 
 
@@ -105,6 +112,7 @@ class ClassroomAttentionMonitor:
         print("步骤1: 初始化模型资源...")
         yolo = ResourceManager.create_yolo(self.config)
         tracker = ResourceManager.create_tracker(self.config)
+        pose_landmarker = ResourceManager.create_pose_landmarker(self.config)
 
         if self.is_camera:
             cap, fps, width, height = create_camera_capture(self.config.camera_id)
@@ -113,7 +121,7 @@ class ClassroomAttentionMonitor:
             cap, fps, total_frames, width, height = create_video_capture(
                 self.video_path)
 
-        if None in [yolo, tracker, cap]:
+        if None in [yolo, tracker, cap, pose_landmarker]:
             print("\n✗ 关键资源初始化失败，程序退出")
             return None, None
 
@@ -164,43 +172,58 @@ class ClassroomAttentionMonitor:
                     if student_crop.size == 0:
                         continue
 
-                    with mp_pose.Pose(
-                        static_image_mode=True,
-                        model_complexity=0,
-                        min_detection_confidence=self.config.min_detection_confidence
-                    ) as pose_estimator:
-                        rgb_crop = cv2.cvtColor(student_crop, cv2.COLOR_BGR2RGB)
-                        pose_results = pose_estimator.process(rgb_crop)
+                    rgb_crop = cv2.cvtColor(student_crop, cv2.COLOR_BGR2RGB)
+                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_crop)
+                    result = pose_landmarker.detect(mp_image)
 
-                        if pose_results and pose_results.pose_landmarks:
-                            landmarks = pose_results.pose_landmarks.landmark
-                            kpts = mediapipe_landmarks_to_coco_keypoints(landmarks)
-                            bbox_height = y2 - y1
-                            score, reasons = calculate_attention_score(
-                                kpts, bbox_height, self.config,
-                                self.state_tracker, int(track_id), fps,
-                                face_crop=student_crop
-                            )
+                    if result.pose_landmarks:
+                        landmarks = result.pose_landmarks[0]
+                        kpts = mediapipe_landmarks_to_coco_keypoints(landmarks)
+                        # Convert normalized coords [0-1] to pixel coords
+                        crop_w, crop_h = x2 - x1, y2 - y1
+                        kpts[:, 0] *= crop_w
+                        kpts[:, 1] *= crop_h
+                        bbox_height = y2 - y1
+                        score, reasons = calculate_attention_score(
+                            kpts, bbox_height, self.config,
+                            self.state_tracker, int(track_id), fps,
+                            face_crop=student_crop
+                        )
+                        # DEBUG: print diagnostic every 15 frames
+                        if frame_idx % 15 == 0:
+                            nose = kpts[0]
+                            lsh = kpts[5]
+                            rsh = kpts[6]
+                            sh_y = (lsh[1] + rsh[1]) / 2
+                            hd = nose[1] - sh_y
+                            th = self.config.behavior.head_down_threshold * bbox_height
+                            print(f"  [F{frame_idx}] nose_vis={nose[2]:.2f} "
+                                  f"sh_vis={lsh[2]:.2f}/{rsh[2]:.2f} "
+                                  f"noseY={nose[1]:.0f} shY={sh_y:.0f} "
+                                  f"head_drop={hd:.1f} thresh={th:.1f} "
+                                  f"score={score} {reasons}", flush=True)
+                    elif frame_idx % 30 == 0:
+                        print(f"  [F{frame_idx}] NO pose landmarks detected!", flush=True)
 
-                            is_not_focused = score < self.config.attention_threshold
-                            viz_detections.append({
-                                'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
-                                'track_id': track_id,
+                        is_not_focused = score < self.config.attention_threshold
+                        viz_detections.append({
+                            'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
+                            'track_id': track_id,
+                            'score': score,
+                            'reasons': reasons,
+                            'is_focused': not is_not_focused,
+                        })
+
+                        if is_not_focused:
+                            self.attention_records.append({
+                                'student_id': int(track_id),
+                                'time_sec': round(frame_idx / fps, 2),
+                                'time_str': str(timedelta(seconds=int(frame_idx / fps))),
+                                'frame': frame_idx,
                                 'score': score,
-                                'reasons': reasons,
-                                'is_focused': not is_not_focused,
+                                'reason': ';'.join(reasons),
+                                'bbox': (x1, y1, x2, y2)
                             })
-
-                            if is_not_focused:
-                                self.attention_records.append({
-                                    'student_id': int(track_id),
-                                    'time_sec': round(frame_idx / fps, 2),
-                                    'time_str': str(timedelta(seconds=int(frame_idx / fps))),
-                                    'frame': frame_idx,
-                                    'score': score,
-                                    'reason': ';'.join(reasons),
-                                    'bbox': (x1, y1, x2, y2)
-                                })
 
                 draw_annotations(frame, viz_detections, True)
 

@@ -13,7 +13,7 @@ class BehaviorConfig:
     eye_closed_threshold: float = 0.18
     eye_closed_duration: float = 2.0
     eye_closed_penalty: int = 70
-    stillness_threshold: float = 5.0
+    stillness_threshold: float = 25.0
     stillness_duration: float = 4.0
     stillness_penalty: int = 50
     shoulder_tilt_threshold: int = 25

@@ -10,11 +10,15 @@ def make_kpt(x, y, conf=0.9):
     return np.array([x, y, conf], dtype=np.float32)
 
 
-def make_keypoints(overrides=None):
+def make_keypoints(overrides=None, scale=1.0):
     """Create a standard upright-sitting 17-keypoint COCO array.
 
     Indices: 0=nose, 1=left_eye, 2=right_eye, 5=left_shoulder,
     6=right_shoulder, 9=left_wrist, 10=right_wrist, 13=left_hip, 14=right_hip.
+
+    Args:
+        overrides: dict of index -> [x, y, conf] to override specific keypoints.
+        scale: multiply x,y coordinates by this factor (use bbox_height for pixel coords).
     """
     kpts = np.zeros((17, 3), dtype=np.float32)
     kpts[0] = [0.5, 0.15, 0.9]   # nose
@@ -30,6 +34,8 @@ def make_keypoints(overrides=None):
     if overrides:
         for idx, val in overrides.items():
             kpts[idx] = np.array(val, dtype=np.float32)
+    kpts[:, 0] *= scale
+    kpts[:, 1] *= scale
     return kpts
 
 
@@ -54,9 +60,9 @@ class TestAttentionScoring:
 
     def test_head_down_detected(self, config, tracker):
         """Nose below shoulders should trigger 短暂低头."""
-        kpts = make_keypoints({
-            0: [0.5, 0.50, 0.9],  # nose below shoulder center (0.35)
-        })
+        kpts = make_keypoints(
+            {0: [0.5, 0.50, 0.9]},  # nose below shoulder center (0.35)
+            scale=100)  # pixel coords for bbox_height=100
         score, reasons = calculate_attention_score(
             kpts, 100, config, tracker, 2, 30.0)
         assert score < 90, f"Expected <90 for head down, got {score}"
@@ -86,9 +92,9 @@ class TestAttentionScoring:
     def test_long_term_head_down_severe_penalty(self, config):
         """Repeated head-down frames should trigger 长时间低头 with severe penalty."""
         tracker = StudentStateTracker()
-        kpts = make_keypoints({
-            0: [0.5, 0.50, 0.9],  # head down
-        })
+        kpts = make_keypoints(
+            {0: [0.5, 0.50, 0.9]},  # head down
+            scale=100)  # pixel coords for bbox_height=100
         # Simulate ~3.3 seconds at 30fps (100 frames)
         for _frame in range(100):
             score, reasons = calculate_attention_score(
@@ -197,9 +203,13 @@ class TestMediaPipeConversion:
         tracker = StudentStateTracker()
 
         kpts = mediapipe_landmarks_to_coco_keypoints(landmarks)
+        # Convert normalized coords to pixel coords (as ca.py does)
+        bbox_h = 100
+        kpts[:, 0] *= bbox_h
+        kpts[:, 1] *= bbox_h
         for _ in range(100):
             score, reasons = calculate_attention_score(
-                kpts, 100, config, tracker, 1, 30.0)
+                kpts, bbox_h, config, tracker, 1, 30.0)
 
         assert score <= 30, f"Expected severe penalty, got {score}"
         assert any("长时间低头" in r for r in reasons)

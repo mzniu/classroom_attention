@@ -38,7 +38,8 @@ def mediapipe_landmarks_to_coco_keypoints(landmarks) -> "np.ndarray":
 
     for coco_idx, mp_idx in _MP_TO_COCO.items():
         lm = landmarks[mp_idx]
-        kpts[coco_idx] = [lm.x, lm.y, lm.visibility]
+        presence = getattr(lm, 'presence', 0.0)
+        kpts[coco_idx] = [lm.x, lm.y, max(lm.visibility, presence)]
     return kpts
 
 
@@ -94,7 +95,7 @@ class StudentStateTracker:
             return 1.0
 
     def check_long_term_behaviors(self, student_id: int, keypoints, fps: float,
-                                   config: Config) -> list:
+                                   config: Config, bbox_height: float = 0) -> list:
         """Check for sustained behaviors (head down, eye closed, stillness)."""
         behaviors = []
         bh = config.behavior
@@ -107,7 +108,8 @@ class StudentStateTracker:
             if (nose[2] > 0.5 and left_shoulder[2] > 0.5
                     and right_shoulder[2] > 0.5):
                 shoulder_center_y = (left_shoulder[1] + right_shoulder[1]) / 2
-                if nose[1] - shoulder_center_y > bh.head_down_threshold:
+                head_drop = nose[1] - shoulder_center_y
+                if head_drop > bh.head_down_threshold * bbox_height:
                     self.head_down_timer[student_id] += 1 / fps
                     if self.head_down_timer[student_id] >= bh.head_down_duration:
                         behaviors.append(
@@ -180,7 +182,7 @@ def calculate_attention_score(keypoints, bbox_height: float, config: Config,
     try:
         state_tracker.update(student_id, keypoints, fps, face_crop)
         long_term_behaviors = state_tracker.check_long_term_behaviors(
-            student_id, keypoints, fps, config)
+            student_id, keypoints, fps, config, bbox_height)
 
         for behavior in long_term_behaviors:
             if "长时间低头" in behavior:
@@ -205,7 +207,7 @@ def calculate_attention_score(keypoints, bbox_height: float, config: Config,
                 and left_shoulder[2] > 0.5
                 and right_shoulder[2] > 0.5):
             shoulder_center_y = (left_shoulder[1] + right_shoulder[1]) / 2
-            head_drop = (nose[1] - shoulder_center_y) * bbox_height
+            head_drop = nose[1] - shoulder_center_y
             if head_drop > bh.head_down_threshold * bbox_height:
                 score -= bh.short_head_down_penalty
                 reasons.append("短暂低头")

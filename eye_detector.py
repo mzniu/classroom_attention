@@ -45,20 +45,27 @@ class EyeDetector:
     def __init__(self):
         try:
             import mediapipe as mp
+            from mediapipe.tasks.python import vision
+            from mediapipe.tasks.python.core import base_options as base
         except ImportError:
             raise ImportError(
                 "MediaPipe is required for EyeDetector. "
                 "Install with: pip install mediapipe"
             )
-        self.face_mesh = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
+        options = vision.FaceLandmarkerOptions(
+            base_options=base.BaseOptions(
+                model_asset_path='face_landmarker.task'),
+            running_mode=vision.RunningMode.IMAGE,
+            num_faces=1,
+            min_face_detection_confidence=0.5,
+            min_face_presence_confidence=0.5,
+            output_face_blendshapes=False,
+            output_facial_transformation_matrixes=False,
         )
+        self.face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
     def get_ear(self, face_image) -> float | None:
-        """Run Face Mesh on a face crop and return average EAR.
+        """Run Face Landmarker on a face crop and return average EAR.
 
         Args:
             face_image: BGR image crop (numpy array) of a single face.
@@ -67,12 +74,14 @@ class EyeDetector:
             Average left+right EAR as float, or None if detection fails.
         """
         import cv2
+        import mediapipe as mp
         rgb = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
-        results = self.face_mesh.process(rgb)
-        if not results.multi_face_landmarks:
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = self.face_landmarker.detect(mp_image)
+        if not result.face_landmarks:
             return None
 
-        landmarks = results.multi_face_landmarks[0].landmark
+        landmarks = result.face_landmarks[0]
         h, w = face_image.shape[:2]
 
         def extract_eye_points(indices):
@@ -89,8 +98,8 @@ class EyeDetector:
         return (left_ear + right_ear) / 2.0
 
     def close(self):
-        """Release Face Mesh resources."""
+        """Release Face Landmarker resources."""
         try:
-            self.face_mesh.close()
+            self.face_landmarker.close()
         except Exception:
             pass

@@ -18,7 +18,7 @@ behavior:
     penalty: 70
 
   stillness:
-    movement_px: 5.0      # max head movement pixels (in normalized space)
+    movement_px: 25.0     # max cumulative head movement in pixels over 5 frames
     duration_sec: 4.0
     penalty: 50
 

@@ -6,8 +6,9 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Model files (downloaded automatically by ultralytics)
+# Model files (downloaded automatically)
 *.pt
+*.task
 
 # Output files
 *.csv
