@@ -22,6 +22,10 @@ class BehaviorConfig:
     hand_below_hip_penalty: int = 15
     short_head_down_penalty: int = 30
     hand_raise_enabled: bool = True
+    chat_enabled: bool = False
+    chat_distance_threshold: float = 0.15
+    chat_angle_threshold: float = 40.0
+    chat_penalty: int = 15
 
 
 @dataclass
@@ -114,6 +118,12 @@ def load_config(path: str = "config.yaml") -> Config:
         if "hand_raise" in b:
             hr = b["hand_raise"]
             bh.hand_raise_enabled = hr.get("enabled", bh.hand_raise_enabled)
+        if "chat" in b:
+            ch = b["chat"]
+            bh.chat_enabled = ch.get("enabled", bh.chat_enabled)
+            bh.chat_distance_threshold = ch.get("distance_threshold", bh.chat_distance_threshold)
+            bh.chat_angle_threshold = ch.get("angle_threshold", bh.chat_angle_threshold)
+            bh.chat_penalty = ch.get("penalty", bh.chat_penalty)
 
     if "scoring" in data:
         cfg.attention_threshold = data["scoring"].get("attention_threshold", cfg.attention_threshold)

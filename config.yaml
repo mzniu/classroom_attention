@@ -36,6 +36,12 @@ behavior:
   hand_raise:
     enabled: true          # detect hand-raising as engagement signal
 
+  chat:
+    enabled: false         # EXPERIMENTAL: detect adjacent students chatting
+    distance_threshold: 0.15  # normalized bbox gap (< this = adjacent)
+    angle_threshold: 40.0     # shoulder angle difference (> this = facing)
+    penalty: 15            # points deducted for chatting
+
 scoring:
   attention_threshold: 50  # score below this = not-focused
 

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classroom Attention Monitor</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; }
+.header { background: #1e293b; padding: 12px 20px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #334155; }
+.header h1 { font-size: 18px; color: #38bdf8; }
+.controls { display: flex; gap: 8px; align-items: center; }
+.controls input { padding: 6px 10px; border: 1px solid #475569; border-radius: 4px; background: #0f172a; color: #e2e8f0; font-size: 13px; width: 200px; }
+.controls button { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.btn-connect { background: #16a34a; color: #fff; }
+.btn-connect:hover { background: #15803d; }
+.btn-stop { background: #dc2626; color: #fff; }
+.btn-stop:hover { background: #b91c1c; }
+.status { font-size: 13px; padding: 4px 10px; border-radius: 10px; }
+.status.connected { background: #166534; color: #86efac; }
+.status.disconnected { background: #991b1b; color: #fca5a5; }
+.status.loading { background: #854d0e; color: #fde68a; }
+.main { display: flex; height: calc(100vh - 56px); }
+.video-panel { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; position: relative; }
+.video-panel img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.video-panel .placeholder { color: #475569; font-size: 14px; }
+.sidebar { width: 320px; background: #1e293b; display: flex; flex-direction: column; border-left: 1px solid #334155; overflow-y: auto; }
+.sidebar h3 { padding: 14px 16px 8px; font-size: 14px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px 12px; }
+.stat-card { background: #0f172a; border-radius: 6px; padding: 12px; text-align: center; }
+.stat-card .value { font-size: 28px; font-weight: 700; color: #38bdf8; }
+.stat-card .label { font-size: 11px; color: #64748b; margin-top: 2px; }
+.student-list { padding: 0 16px 12px; }
+.student-row { display: flex; align-items: center; gap: 10px; padding: 8px; background: #0f172a; border-radius: 6px; margin-bottom: 6px; }
+.student-row .id-badge { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+.student-row .id-badge.focused { background: #166534; color: #86efac; }
+.student-row .id-badge.unfocused { background: #991b1b; color: #fca5a5; }
+.student-row .info { flex: 1; }
+.student-row .score { font-size: 18px; font-weight: 700; }
+.student-row .score.high { color: #86efac; }
+.student-row .score.low { color: #fca5a5; }
+.student-row .reasons { font-size: 11px; color: #64748b; margin-top: 2px; }
+.log-panel { padding: 0 16px 12px; }
+.log-entry { font-size: 11px; color: #64748b; padding: 2px 0; font-family: monospace; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Classroom Attention</h1>
+  <div class="controls">
+    <input id="videoSource" value="0" placeholder="camera ID or video path">
+    <button class="btn-connect" id="btnConnect" onclick="connect()">Connect</button>
+    <button class="btn-stop" id="btnStop" onclick="disconnect()" disabled>Stop</button>
+  </div>
+  <span class="status disconnected" id="statusBadge">Disconnected</span>
+</div>
+
+<div class="main">
+  <div class="video-panel" id="videoPanel">
+    <span class="placeholder">Connect to a video source to begin monitoring</span>
+  </div>
+  <div class="sidebar">
+    <h3>Overview</h3>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="value" id="studentCount">-</div>
+        <div class="label">Students</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="focusedCount">-</div>
+        <div class="label">Focused</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="avgScore">-</div>
+        <div class="label">Avg Score</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="frameIdx">-</div>
+        <div class="label">Frame</div>
+      </div>
+    </div>
+
+    <h3>Students</h3>
+    <div class="student-list" id="studentList">
+      <span style="color:#475569;font-size:13px;">No data yet</span>
+    </div>
+
+    <h3>Log</h3>
+    <div class="log-panel" id="logPanel"></div>
+  </div>
+</div>
+
+<script>
+let ws = null;
+let students = {};
+
+function log(msg) {
+  const panel = document.getElementById('logPanel');
+  const ts = new Date().toLocaleTimeString();
+  panel.innerHTML += `<div class="log-entry">[${ts}] ${msg}</div>`;
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function setStatus(state) {
+  const badge = document.getElementById('statusBadge');
+  badge.className = 'status ' + state;
+  badge.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+}
+
+function connect() {
+  if (ws) { disconnect(); }
+  const source = document.getElementById('videoSource').value;
+  setStatus('loading');
+  log('Connecting to ' + source + '...');
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host + '/ws');
+
+  ws.onopen = () => {
+    document.getElementById('btnConnect').disabled = true;
+    document.getElementById('btnStop').disabled = false;
+    ws.send(JSON.stringify({ video_source: source }));
+  };
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.error) {
+      log('ERROR: ' + data.error);
+      return;
+    }
+    if (data.status === 'loading') {
+      log(data.message + ' (res: ' + data.resolution.join('x') + ', fps: ' + data.fps.toFixed(1) + ')');
+      return;
+    }
+    if (data.status === 'streaming') {
+      setStatus('connected');
+      log('Stream started');
+      return;
+    }
+    if (data.type === 'frame') {
+      // Update video
+      document.getElementById('videoPanel').innerHTML =
+        '<img src="data:image/jpeg;base64,' + data.image + '" />';
+      document.getElementById('frameIdx').textContent = data.frame_idx;
+
+      // Update students
+      students = {};
+      data.students.forEach(s => { students[s.id] = s; });
+
+      const count = data.students.length;
+      const focused = data.students.filter(s => s.focused).length;
+      const avg = count > 0
+        ? Math.round(data.students.reduce((a, s) => a + s.score, 0) / count)
+        : '-';
+
+      document.getElementById('studentCount').textContent = count;
+      document.getElementById('focusedCount').textContent = focused;
+      document.getElementById('avgScore').textContent = avg;
+
+      // Render student list
+      const list = document.getElementById('studentList');
+      if (data.students.length === 0) {
+        list.innerHTML = '<span style="color:#475569;font-size:13px;">No students detected</span>';
+      } else {
+        list.innerHTML = data.students
+          .sort((a, b) => a.score - b.score)
+          .map(s => {
+            const cls = s.focused ? 'focused' : 'unfocused';
+            const scoreCls = s.score >= 50 ? 'high' : 'low';
+            return '<div class="student-row">' +
+              '<div class="id-badge ' + cls + '">' + s.id + '</div>' +
+              '<div class="info">' +
+                '<div class="score ' + scoreCls + '">' + s.score + '%</div>' +
+                '<div class="reasons">' + (s.reasons.length > 0 ? s.reasons.join(', ') : '&mdash;') + '</div>' +
+              '</div>' +
+            '</div>';
+          }).join('');
+      }
+    }
+  };
+
+  ws.onclose = () => {
+    setStatus('disconnected');
+    document.getElementById('btnConnect').disabled = false;
+    document.getElementById('btnStop').disabled = true;
+    log('Disconnected');
+    ws = null;
+  };
+
+  ws.onerror = () => {
+    log('Connection error');
+  };
+}
+
+function disconnect() {
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
+}
+</script>
+</body>
+</html>

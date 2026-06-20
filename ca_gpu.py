@@ -14,6 +14,7 @@ import torch
 
 from config import Config, load_config
 from behavior import StudentStateTracker, calculate_attention_score
+from chat_detector import detect_chat
 from reporter import generate_report, print_report
 from visualizer import draw_annotations
 from utils import (suppress_warnings, detect_device, create_video_capture,
@@ -131,6 +132,7 @@ class ClassroomMonitor:
                                 'score': attention_score,
                                 'reasons': reasons,
                                 'is_focused': not is_not_focused,
+                                'keypoints': kpts,
                             })
 
                             if is_not_focused:
@@ -143,6 +145,16 @@ class ClassroomMonitor:
                                     'reason': ';'.join(reasons),
                                     'bbox': (x1, y1, x2, y2)
                                 })
+
+                    chat_pairs = detect_chat(detections, self.config)
+                    for sid_a, sid_b in chat_pairs:
+                        for det in detections:
+                            if det['track_id'] in (sid_a, sid_b):
+                                det['score'] = max(0, det['score'] -
+                                                   self.config.behavior.chat_penalty)
+                                if '聊天' not in det['reasons']:
+                                    det['reasons'].append('聊天')
+                                det['is_focused'] = det['score'] >= self.config.attention_threshold
 
                     draw_annotations(orig_frame, detections, self.config.show_labels)
                     display_frame = orig_frame

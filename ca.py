@@ -23,6 +23,7 @@ from behavior import (
     StudentStateTracker, calculate_attention_score,
     mediapipe_landmarks_to_coco_keypoints
 )
+from chat_detector import detect_chat
 from eye_detector import EyeDetector
 
 # v1-specific: suppress MediaPipe/TF warnings on Windows
@@ -197,6 +198,7 @@ class ClassroomAttentionMonitor:
                             'score': score,
                             'reasons': reasons,
                             'is_focused': not is_not_focused,
+                            'keypoints': kpts,
                         })
 
                         if is_not_focused:
@@ -209,6 +211,16 @@ class ClassroomAttentionMonitor:
                                 'reason': ';'.join(reasons),
                                 'bbox': (x1, y1, x2, y2)
                             })
+
+                chat_pairs = detect_chat(viz_detections, self.config)
+                for sid_a, sid_b in chat_pairs:
+                    for det in viz_detections:
+                        if det['track_id'] in (sid_a, sid_b):
+                            det['score'] = max(0, det['score'] -
+                                               self.config.behavior.chat_penalty)
+                            if '聊天' not in det['reasons']:
+                                det['reasons'].append('聊天')
+                            det['is_focused'] = det['score'] >= self.config.attention_threshold
 
                 draw_annotations(frame, viz_detections, True)
 
