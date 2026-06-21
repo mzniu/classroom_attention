@@ -8,7 +8,7 @@ model:
 
 behavior:
   head_down:
-    threshold: 0.03       # nose below shoulder-center (normalized)
+    threshold: 0.08       # nose-to-shoulder gap (normalized, smaller = head lower)
     duration_sec: 3.0     # seconds before "long-term" classification
     penalty: 80           # points deducted for long-term head-down
 

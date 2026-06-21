@@ -52,7 +52,7 @@ def tracker():
 class TestAttentionScoring:
     def test_perfect_posture_scores_high(self, config, tracker):
         """Upright sitting student should score >= 90."""
-        kpts = make_keypoints()
+        kpts = make_keypoints(scale=100)
         score, reasons = calculate_attention_score(
             kpts, 100, config, tracker, 1, 30.0)
         assert score >= 90, f"Expected >=90, got {score}, reasons: {reasons}"
@@ -138,6 +138,31 @@ class TestAttentionScoring:
             kpts, 100, config, tracker, 9, 30.0)
         assert score == 0
         assert reasons == []
+
+
+    def test_head_down_nose_above_but_close_to_shoulders(self, config, tracker):
+        """Realistic head-down: nose moves close to shoulders but stays above.
+
+        This is the common case — a student tilts their head forward/down
+        but from the front camera the nose is still above the shoulders.
+        The old formula (head_drop > positive_threshold) would miss this.
+        """
+        kpts = make_keypoints({
+            0: [0.5, 0.37, 0.9],   # nose close to shoulder (0.35), but above
+        }, scale=100)
+        score, reasons = calculate_attention_score(
+            kpts, 100, config, tracker, 17, 30.0)
+        assert score < 90, f"Realistic head-down should be detected, got {score}"
+        assert any("短暂低头" in r for r in reasons), f"Reasons: {reasons}"
+
+    def test_head_down_nose_below_shoulders_still_detected(self, config, tracker):
+        """Extreme head-down (nose below shoulders) should still trigger."""
+        kpts = make_keypoints({
+            0: [0.5, 0.50, 0.9],   # nose well below shoulders
+        }, scale=100)
+        score, reasons = calculate_attention_score(
+            kpts, 100, config, tracker, 18, 30.0)
+        assert score < 90, f"Extreme head-down should still be detected, got {score}"
 
 
 class TestMediaPipeConversion:

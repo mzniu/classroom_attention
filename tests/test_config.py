@@ -18,7 +18,7 @@ def test_load_config_nonexistent_returns_defaults():
     """Loading missing file returns Config with defaults."""
     cfg = load_config("nonexistent_config_test.yaml")
     assert isinstance(cfg, Config)
-    assert cfg.behavior.head_down_threshold == 0.03
+    assert cfg.behavior.head_down_threshold == 0.08
 
 
 def test_load_config_partial_override():

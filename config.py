@@ -7,7 +7,7 @@ import yaml
 @dataclass
 class BehaviorConfig:
     """Tunable thresholds for all behavior detection rules."""
-    head_down_threshold: float = 0.03
+    head_down_threshold: float = 0.08
     head_down_duration: float = 3.0
     head_down_penalty: int = 80
     eye_closed_threshold: float = 0.18

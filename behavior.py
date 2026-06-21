@@ -109,7 +109,7 @@ class StudentStateTracker:
                     and right_shoulder[2] > 0.5):
                 shoulder_center_y = (left_shoulder[1] + right_shoulder[1]) / 2
                 head_drop = nose[1] - shoulder_center_y
-                if head_drop > bh.head_down_threshold * bbox_height:
+                if head_drop > -bh.head_down_threshold * bbox_height:
                     self.head_down_timer[student_id] += 1 / fps
                     if self.head_down_timer[student_id] >= bh.head_down_duration:
                         behaviors.append(
@@ -208,7 +208,7 @@ def calculate_attention_score(keypoints, bbox_height: float, config: Config,
                 and right_shoulder[2] > 0.5):
             shoulder_center_y = (left_shoulder[1] + right_shoulder[1]) / 2
             head_drop = nose[1] - shoulder_center_y
-            if head_drop > bh.head_down_threshold * bbox_height:
+            if head_drop > -bh.head_down_threshold * bbox_height:
                 score -= bh.short_head_down_penalty
                 reasons.append("短暂低头")
 
